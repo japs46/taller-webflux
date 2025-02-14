@@ -1,0 +1,68 @@
+version: '3.8'
+
+networks:
+  app-network:
+    driver: bridge
+
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres-container
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: taller_webflux
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app-network
+
+  redis:
+    image: redis:latest
+    container_name: redis-container
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack-container
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    environment:
+      - SERVICES=dynamodb,sqs
+      - DEBUG=1
+    volumes:
+      - ./init-localstack.sh:/etc/localstack/init/ready.d/init-localstack.sh
+    networks:
+      - app-network
+
+  app:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    container_name: app-taller-webflux
+    depends_on:
+      - postgres
+      - redis
+      - localstack
+    environment:
+      - AWS_ACCESS_KEY_ID=testAccessKey
+      - AWS_SECRET_ACCESS_KEY=testSecretKey
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT=http://localstack:4566
+    ports:
+      - "8080:8080"
+    command: [ "sh", "-c", "./wait-for-it.sh postgres:5432 -- ./wait-for-it.sh localstack:4566 -- ./wait-for-it.sh redis:6379 -- java -jar taller-webflux-nequi.jar" ]
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
